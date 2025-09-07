@@ -1,4 +1,5 @@
 import os
+import os
 import json
 import base64
 from flask import Flask, render_template, request, jsonify, session, Response
@@ -7,6 +8,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import uuid
 import markdown
+from script_detector import script_detector
 
 # Load environment variables
 load_dotenv()
@@ -25,53 +27,114 @@ SYSTEM_INSTRUCTION = """You are **Medicynth**, a professional, reliable, evidenc
 - Style: Copilot-like: proactive, stepwise, actionable suggestions when appropriate, short summaries up front, then optional deeper explanation.
 - UI hint (for developers): Assume a **purple, professional theme** with a subtle glow on CTA elements — keep responses formatted so they display cleanly in that UI (use short paragraphs, clear headings when needed, bullet lists for steps).
 
+**CRITICAL SCRIPT PRESERVATION RULE**
+- **MOST IMPORTANT**: You will receive a SCRIPT PRESERVATION INSTRUCTION before each user message
+- **FOLLOW THE SCRIPT INSTRUCTION EXACTLY** - this is the #1 priority
+- If told to use DEVANAGARI → use only देवनागरी characters (अ, आ, इ, ई, क, ख, etc.)
+- If told to use ROMANIZED/LATIN → use only English letters (a, aa, i, ee, k, kh, g, gh, etc.)
+- If told to use ARABIC → use only Arabic script (ا, ب, ت, etc.)
+- **NEVER change the script type** - this breaks the user experience
+- **RESPOND IN THE EXACT SAME LANGUAGE** as detected by the script preservation instruction
+
+**MULTI-LANGUAGE SUPPORT**
+- Always respond in the EXACT SAME LANGUAGE as the user input
+- Automatically detect the language and respond naturally
+- Use appropriate medical terminology for each language
+- For Indian languages, use proper cultural context
+
 **Scope & allowed content**
 - **ONLY** answer health-related questions: medical conditions, symptoms, treatments, medication basics, diagnostics concepts, lifestyle, prevention, mental health guidance, interpretation of public health info. You can analyze images of rashes, pills, medical equipment, videos of symptoms or exercises, and documents containing health information, etc.
-- If a user query is outside health (legal, finance, product shopping unrelated to health, hobby, etc.), politely refuse with:  
-  "I'm Medicynth — I can only help with health, medical, or wellness questions. For that topic you'll need a specialist in that area."
-- Never invent credentials or claim to be a licensed physician. If the user asks, say: "I am an AI health assistant (Medicynth), not a licensed physician."
+- If a user query is outside health, politely refuse in the user's language and script:
+  - English: "I'm Medicynth — I can only help with health, medical, or wellness questions."
+  - Hindi (Devanagari): "मैं मेडिसिंथ हूं — मैं केवल स्वास्थ्य, चिकित्सा या कल्याण संबंधी प्रश्नों में मदद कर सकता हूं।"
+  - Hindi (Romanized): "Main Medicynth hoon — main sirf swasthya, chikitsa ya kalyan sambandhi prashnon mein madad kar sakta hoon."
+  - Marathi (Devanagari): "मी मेडिसिंथ आहे — मी फक्त आरोग्य, वैद्यकीय किंवा कल्याण संबंधित प्रश्नांमध्ये मदत करू शकतो।"
+  - Marathi (Romanized): "Mi Medicynth aahe — mi fakt aarogya, vaidyakiya kinva kalyan sambhandhit prashnaammadhye madatha karu shakato."
+- Never invent credentials or claim to be a licensed physician.
 
 **Medical safety rules**
-- For **urgent / emergency** situations (severe chest pain, difficulty breathing, severe bleeding, loss of consciousness, signs of stroke, imminent self-harm), do **not** provide medical instructions beyond:  
-  "If someone is in immediate danger, call your local emergency number now (e.g., 911) or go to the nearest emergency department."  
-  Then offer to provide general information appropriate for non-emergent follow-up.
-- For diagnostic or prescription requests: avoid definitive diagnosis and never provide prescription medication dosing beyond standard over-the-counter guidance. Instead: explain likely possibilities, mention typical next steps (tests or specialist referral), and advise seeing a licensed clinician for diagnosis and prescriptions.
-- Always include a short safety/disclaimer paragraph when giving clinical advice: encourage follow-up with a healthcare professional, note any major red flags that require urgent care, and mention that recommendations may vary by country/individual factors.
-
-**Evidence & citations**
-- Prefer evidence-based, well-established guidance. When referencing specific guidelines, studies, or official recommendations, say: "According to reputable sources (e.g., WHO, CDC, major specialty guidelines)…" and offer to supply citations or links on request.
-- If the user requests citations or recent guidelines, say you can provide references and ask if they want peer-reviewed studies, official guidelines, or patient-friendly sources.
-
-**Interaction behavior**
-- Start every reply with a one-sentence summary of the answer (≤20 words), then expand in 2–4 short paragraphs or a bulleted action plan.
-- If a question is ambiguous, ask one clarifying question **only if necessary**; otherwise, make a best-effort answer using common-base assumptions and note those assumptions at the top.
-- Use plain language for patient-facing answers; use more technical language and optional deeper details for clinician users if asked.
-- Provide safe, practical next steps (e.g., "see primary care within X days", "if symptoms worsen, seek emergency care", or "consider these tests or specialists") — specify timescales clearly (e.g., "seek urgent care within 24 hours").
-- If the user supplies symptoms, request minimal essential context (age group, known chronic conditions, meds, duration, severity) before making tailored advice — but do not repeatedly request the same info.
-
-**Restrictions**
-- Never provide instructions for self-harm, illegal drug manufacture, or weaponization.
-- Do not provide step-by-step instructions for invasive procedures or anything that would require practitioner training.
-- Do not make absolute guarantees (no "this will cure you" or "100% accurate"). Use probabilistic language where appropriate.
-
-**Formatting examples (ideal response shape)**
-1. One-line summary.  
-2. Short actionable bullets / immediate steps (if any).  
-3. Brief explanation / likely causes.  
-4. Safety disclaimer + suggested next steps and when to seek emergency care.  
-5. Offer to provide citations or further reading.
-
-**Integration & privacy hints**
-- When integrated via the Gemini AI API key in Flask, ensure user PHI is handled per law — do not log sensitive data unnecessarily, and remind users their input may be stored if your app saves transcripts.
-- If user asks where their data goes, provide a short privacy note and a link to the app's privacy policy (developers handle link insertion).
+- For emergencies, provide appropriate guidance in user's language and script:
+  - English: "If someone is in immediate danger, call your local emergency number now or go to the nearest emergency department."
+  - Hindi (Devanagari): "यदि कोई तत्काल खतरे में है, तो अभी अपना स्थानीय आपातकालीन नंबर डायल करें।"
+  - Hindi (Romanized): "Yadi koi tatkal khatre mein hai, to abhi apna sthaniya apatkalin number dial karein."
+  - Marathi (Devanagari): "जर कोणी तात्काळ धोक्यात असेल, तर आता तुमचा स्थानिक आपत्कालीन क्रमांक कॉल करा।"
+  - Marathi (Romanized): "Jar koni tatkal dhokyat asel, tar aata tumcha sthanik apatkalin kramank call kara."
+- Always include safety disclaimers in the user's language and script
+- Encourage consulting healthcare professionals in appropriate language and script
 
 **Final behavior rule**
-- If at any point the content requested is outside Medicynth's allowed scope, refuse politely and direct the user to an appropriate specialist or emergency service. Always prioritize patient safety and clear, conservative medical guidance."""
+- **CRITICAL**: Always follow the SCRIPT PRESERVATION INSTRUCTION provided before each user message
+- This is the most important rule - failure to follow script instructions breaks the user experience
+- Respond in the exact same language and script as the user input"""
 
 # Configure upload settings
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'zip', 'rar', '7z', 'tar', 'gz', 'pdf', 'doc', 'docx', 'txt'}
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+
+def get_user_friendly_error(error_message):
+    """Convert technical error messages to user-friendly ones"""
+    error_str = str(error_message).lower()
+    
+    # API quota/billing errors
+    if '429' in error_str and 'quota' in error_str:
+        if 'free_tier' in error_str:
+            return "Daily free usage limit reached. You can try again tomorrow or upgrade to a paid plan. 📊"
+        return "I'm currently experiencing high usage. Please try again in a few minutes. 🔄"
+    elif 'quota' in error_str or 'billing' in error_str:
+        return "Service temporarily unavailable. Please try again later. ⏰"
+    
+    # Authentication errors
+    elif 'authentication' in error_str or 'api key' in error_str or '401' in error_str:
+        return "Service configuration issue. Please contact support. 🔧"
+    
+    # Network/connection errors
+    elif 'network' in error_str or 'connection' in error_str or 'timeout' in error_str:
+        return "Connection issue. Please check your internet and try again. 🌐"
+    
+    # Rate limit errors
+    elif 'rate limit' in error_str or '429' in error_str:
+        return "Too many requests. Please wait a moment before trying again. ⏳"
+    
+    # Server errors
+    elif '500' in error_str or 'server error' in error_str:
+        return "Service temporarily down. Please try again in a few minutes. 🛠️"
+    
+    # Generic fallback
+    else:
+        return "Something went wrong. Please try again or contact support if the issue persists. 💬"
+
+def clean_ai_response(response_text):
+    """Remove internal system instructions from AI response"""
+    if not response_text:
+        return response_text
+    
+    # Remove script preservation instructions that might leak into response
+    lines = response_text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        # Skip lines that contain internal instructions
+        if (
+            line.startswith('SCRIPT PRESERVATION INSTRUCTION:') or
+            line.startswith('CRITICAL SCRIPT PRESERVATION RULE:') or
+            'ROMANIZED/LATIN' in line and 'script detected:' in line.lower() or
+            'DEVANAGARI' in line and 'script detected:' in line.lower() or
+            line.startswith('- User has written in') or
+            line.startswith('- You MUST respond in') or
+            line.startswith('- DO NOT use') or
+            line.startswith('- Use English letters:') or
+            line.startswith('- Example for') or
+            'User input script detected:' in line
+        ):
+            continue
+        
+        # Keep all other lines
+        if line:
+            cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines).strip()
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
@@ -86,7 +149,7 @@ def get_chat_session():
     """Get or create chat session for current user"""
     if 'chat_id' not in session:
         session['chat_id'] = str(uuid.uuid4())
-        session['chat_history'] = []
+        session['chat_history'] = []  # Store simplified history
     
     # Create new Gemini model instance
     model = genai.GenerativeModel(
@@ -94,9 +157,52 @@ def get_chat_session():
         system_instruction=SYSTEM_INSTRUCTION
     )
     
-    # Start chat without history to avoid serialization issues
+    # Start chat with history context
     chat = model.start_chat()
+    
+    # Rebuild context from stored history
+    if session.get('chat_history'):
+        context_parts = []
+        context_parts.append({'text': 'Previous conversation context:'})
+        
+        for i, msg in enumerate(session['chat_history'][-10:]):  # Last 10 messages only
+            if msg['role'] == 'user':
+                context_parts.append({'text': f"User ({i+1}): {msg['content']}"})
+            else:
+                context_parts.append({'text': f"Assistant ({i+1}): {msg['content'][:200]}..."})
+        
+        context_parts.append({'text': 'Current conversation:'})
+        
+        # Send context as initial message (won't be visible to user)
+        try:
+            chat.send_message(context_parts)
+        except:
+            pass  # If context fails, continue without it
+    
     return chat
+
+def add_to_history(role, content, script_info=None):
+    """Add message to chat history"""
+    if 'chat_history' not in session:
+        session['chat_history'] = []
+    
+    # Keep only essential info to avoid session size issues
+    history_entry = {
+        'role': role,
+        'content': content[:500],  # Truncate long messages
+        'timestamp': str(uuid.uuid4())[:8],  # Short timestamp
+    }
+    
+    if script_info:
+        history_entry['script'] = script_info
+    
+    session['chat_history'].append(history_entry)
+    
+    # Keep only last 20 messages to prevent session overflow
+    if len(session['chat_history']) > 20:
+        session['chat_history'] = session['chat_history'][-20:]
+    
+    session.modified = True
 
 @app.route('/')
 def index():
@@ -116,6 +222,16 @@ def chat_endpoint():
         
         # Prepare parts for the message
         parts = []
+        detected_script = 'unknown'  # Initialize variable
+        
+        # Add script preservation instruction if there's text
+        if message:
+            detected_script = script_detector.detect_script(message)
+            script_instruction = script_detector.create_script_instruction(detected_script, message)
+            parts.append({'text': script_instruction})
+            
+            # Add user message to history before processing
+            add_to_history('user', message, detected_script)
         
         if image_data:
             # Process base64 image
@@ -127,25 +243,37 @@ def chat_endpoint():
                         'data': image_data['data']
                     }
                 })
+                # Add image info to history
+                add_to_history('user', f"[Image uploaded: {image_data.get('filename', 'unknown')}]")
             except Exception as e:
-                return jsonify({'error': f'Invalid image data: {str(e)}'}), 400
+                friendly_error = get_user_friendly_error(str(e))
+                return jsonify({'error': friendly_error}), 400
         
         if message:
-            parts.append({'text': message})
+            parts.append({'text': f"User message: {message}"})
         
         # Get chat session and send message
         chat = get_chat_session()
         response = chat.send_message(parts)
         
-        # Note: Not storing chat history due to serialization issues
+        # Clean the response to remove internal instructions
+        cleaned_response = clean_ai_response(response.text)
+        
+        # Add AI response to history
+        add_to_history('assistant', cleaned_response, detected_script)
         
         return jsonify({
-            'response': response.text,
+            'response': cleaned_response,
+            'detected_script': detected_script,
+            'chat_id': session.get('chat_id'),
+            'history_length': len(session.get('chat_history', [])),
             'success': True
         })
         
     except Exception as e:
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        # Use user-friendly error message
+        friendly_error = get_user_friendly_error(str(e))
+        return jsonify({'error': friendly_error}), 500
 
 @app.route('/api/chat/stream', methods=['POST'])
 def chat_stream():
@@ -162,6 +290,16 @@ def chat_stream():
             
             # Prepare parts for the message
             parts = []
+            detected_script = 'unknown'
+            
+            # Add script preservation instruction if there's text
+            if message:
+                detected_script = script_detector.detect_script(message)
+                script_instruction = script_detector.create_script_instruction(detected_script, message)
+                parts.append({'text': script_instruction})
+                
+                # Add user message to history before processing
+                add_to_history('user', message, detected_script)
             
             if image_data:
                 # Process base64 image
@@ -172,28 +310,47 @@ def chat_stream():
                             'data': image_data['data']
                         }
                     })
+                    # Add image info to history
+                    add_to_history('user', f"[Image uploaded: {image_data.get('filename', 'unknown')}]")
                 except Exception as e:
-                    yield f"data: {json.dumps({'error': f'Invalid image data: {str(e)}'})}\n\n"
+                    friendly_error = get_user_friendly_error(str(e))
+                    yield f"data: {json.dumps({'error': friendly_error})}\n\n"
                     return
             
             if message:
-                parts.append({'text': message})
+                parts.append({'text': f"User message: {message}"})
             
             # Get chat session and send message
             chat = get_chat_session()
             response = chat.send_message(parts, stream=True)
             
+            # Send script detection info first
+            yield f"data: {json.dumps({'script_info': {'detected_script': detected_script, 'chat_id': session.get('chat_id')}})}\n\n"
+            
+            # Collect response for history
+            full_response = ""
+            
             # Stream the response
             for chunk in response:
                 if chunk.text:
-                    yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+                    full_response += chunk.text
+                    # Clean each chunk before sending to user
+                    cleaned_chunk = clean_ai_response(chunk.text)
+                    if cleaned_chunk:  # Only send non-empty cleaned chunks
+                        yield f"data: {json.dumps({'chunk': cleaned_chunk})}\n\n"
             
-            # Note: Not storing chat history due to serialization issues
+            # Clean the complete response before adding to history
+            cleaned_full_response = clean_ai_response(full_response)
             
-            yield f"data: {json.dumps({'done': True})}\n\n"
+            # Add complete AI response to history
+            add_to_history('assistant', cleaned_full_response, detected_script)
+            
+            yield f"data: {json.dumps({'done': True, 'history_length': len(session.get('chat_history', []))})}\n\n"
             
         except Exception as e:
-            yield f"data: {json.dumps({'error': f'An error occurred: {str(e)}'})}\n\n"
+            # Use user-friendly error message  
+            friendly_error = get_user_friendly_error(str(e))
+            yield f"data: {json.dumps({'error': friendly_error})}\n\n"
     
     return Response(generate(), mimetype='text/plain')
 
@@ -201,12 +358,34 @@ def chat_stream():
 def clear_chat():
     """Clear chat history"""
     try:
-        # Since we're not storing chat history, just clear the chat_id
+        # Clear chat history and create new chat ID
         session.pop('chat_id', None)
+        session.pop('chat_history', None)
         session.modified = True
-        return jsonify({'success': True})
+        
+        return jsonify({
+            'success': True, 
+            'message': 'Chat history cleared',
+            'new_chat_id': str(uuid.uuid4())
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        friendly_error = get_user_friendly_error(str(e))
+        return jsonify({'error': friendly_error}), 500
+
+@app.route('/api/chat/history', methods=['GET'])
+def get_chat_history():
+    """Get current chat history (for debugging)"""
+    try:
+        history = session.get('chat_history', [])
+        return jsonify({
+            'chat_id': session.get('chat_id'),
+            'history_length': len(history),
+            'history': history[-10:],  # Last 10 messages only
+            'success': True
+        })
+    except Exception as e:
+        friendly_error = get_user_friendly_error(str(e))
+        return jsonify({'error': friendly_error}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
@@ -237,7 +416,8 @@ def upload_file():
             return jsonify({'error': 'Invalid file type'}), 400
             
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        friendly_error = get_user_friendly_error(str(e))
+        return jsonify({'error': friendly_error}), 500
 
 @app.errorhandler(413)
 def too_large(e):

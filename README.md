@@ -4,12 +4,15 @@ A professional AI-powered health assistant.
 
 ## 🚀 Features
 
-- **AI-Powered Health Assistant** -health-focused system instructions
+- **AI-Powered Health Assistant** - Advanced health-focused system instructions with conversation context
+- **Smart Chat Memory** - Remembers conversation history for context-aware responses
+- **Multi-Language Script Preservation** - Maintains user's input script (Devanagari, Roman, Arabic, etc.)
+- **Enhanced Language Detection** - Distinguishes Hindi vs Marathi in both Devanagari and Roman scripts
 - **Image Upload & Analysis** - Upload medical images for AI analysis
 - **Speech Recognition** - Voice input support using Web Speech API
 - **Theme Switching** - Dark/Light mode toggle with localStorage persistence
 - **Responsive Design** - Works on desktop and mobile devices
-- **Session Management** - Chat history maintained during session
+- **Session Management** - Chat history maintained during session with context rebuilding
 - **Markdown Support** - Rich text formatting in AI responses
 - **Copy Messages** - Easy copy functionality for AI responses
 

@@ -175,6 +175,35 @@ async function handleFormSubmit(event) {
         
         // Add AI response
         const responseWrapper = createMessageElement(response.response, 'model');
+        
+        // Add script indicator if detected
+        if (response.detected_script && response.detected_script !== 'unknown') {
+            const scriptIndicator = document.createElement('div');
+            scriptIndicator.className = 'script-indicator';
+            scriptIndicator.style.cssText = 'font-size: 0.75em; opacity: 0.6; margin-top: 5px; color: #8e6cc9; font-style: italic;';
+            
+            let scriptName = response.detected_script;
+            if (scriptName === 'romanized_indic') scriptName = 'Romanized';
+            else if (scriptName === 'romanized_hindi') scriptName = 'Romanized Hindi';
+            else if (scriptName === 'romanized_marathi') scriptName = 'Romanized Marathi';
+            else if (scriptName === 'devanagari') scriptName = 'देवनागरी';
+            else if (scriptName === 'devanagari_hindi') scriptName = 'देवनागरी हिंदी';
+            else if (scriptName === 'devanagari_marathi') scriptName = 'देवनागरी मराठी';
+            else if (scriptName === 'latin') scriptName = 'Latin';
+            
+            scriptIndicator.textContent = `Script: ${scriptName}`;
+            responseWrapper.querySelector('.message').appendChild(scriptIndicator);
+        }
+        
+        // Add history length indicator if available
+        if (response.history_length) {
+            const historyIndicator = document.createElement('div');
+            historyIndicator.className = 'history-indicator';
+            historyIndicator.style.cssText = 'font-size: 0.7em; opacity: 0.5; margin-top: 3px; color: #666;';
+            historyIndicator.textContent = `Context: ${response.history_length} messages`;
+            responseWrapper.querySelector('.message').appendChild(historyIndicator);
+        }
+        
         appendMessage(responseWrapper);
         addCopyButton(responseWrapper.querySelector('.message'));
 
